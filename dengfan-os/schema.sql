@@ -1,7 +1,7 @@
 -- 创建食谱材料表
 CREATE TABLE IF NOT EXISTS ingredients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     quantity TEXT,
     unit TEXT,
     category TEXT,

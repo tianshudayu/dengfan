@@ -1,42 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 
 interface RecipeProps {
   onNavigate: (view: string) => void;
 }
 
 export default function Recipe({ onNavigate }: RecipeProps) {
-  const [ingredients, setIngredients] = useState([
-    { id: 1, name: '老豆腐', quantity: '400克', checked: false, missing: false },
-    { id: 2, name: '花椒', quantity: '1 茶匙', checked: true, missing: false },
-    { id: 3, name: '豆瓣酱', quantity: '2 汤匙', checked: false, missing: false },
-    { id: 4, name: '猪肉/牛肉沫', quantity: '100克', checked: false, missing: false },
-    { id: 5, name: '葱 (缺失)', quantity: '2 根', checked: false, missing: true },
-  ]);
-
+  const [ingredients, setIngredients] = useState<any[]>([]);
   const [newIngredientName, setNewIngredientName] = useState('');
   const [newIngredientQuantity, setNewIngredientQuantity] = useState('');
   const [newIngredientAdded, setNewIngredientAdded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleAddIngredient = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newIngredientName || !newIngredientQuantity) return;
-    setIngredients([
-      ...ingredients,
-      {
-        id: Date.now(),
-        name: newIngredientName,
-        quantity: newIngredientQuantity,
-        checked: newIngredientAdded,
-        missing: false,
+  // 初次加载拉取数据
+  useEffect(() => {
+    fetchIngredients();
+  }, []);
+
+  const fetchIngredients = async () => {
+    try {
+      setIsLoading(true);
+      const res = await apiFetch('/manage');
+      if (res && res.data) {
+        setIngredients(res.data.map((item: any) => ({
+          ...item,
+          checked: false,
+          missing: false
+        })));
       }
-    ]);
+    } catch (e) {
+      console.error("加载食材失败", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newIngredientName) return;
+
+    // 乐观更新 UI
+    const optimisticId = Date.now();
+    const newIngredient = {
+      id: optimisticId,
+      name: newIngredientName,
+      quantity: newIngredientQuantity,
+      checked: newIngredientAdded,
+      missing: false,
+    };
+
+    setIngredients(prev => [newIngredient, ...prev]);
     setNewIngredientName('');
     setNewIngredientQuantity('');
     setNewIngredientAdded(false);
+
+    try {
+      // 提交到 D1 数据库
+      await apiFetch('/manage', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newIngredientName,
+          quantity: newIngredientQuantity,
+        })
+      });
+      // 静默重新拉取确保 ID 和状态与数据库同步
+      fetchIngredients();
+    } catch (error) {
+      console.error("保存失败", error);
+      // 回滚
+      setIngredients(prev => prev.filter(i => i.id !== optimisticId));
+    }
   };
 
   const toggleIngredient = (id: number) => {
-    setIngredients(ingredients.map(ing => 
+    setIngredients(ingredients.map(ing =>
       ing.id === id ? { ...ing, checked: !ing.checked } : ing
     ));
   };
@@ -110,18 +147,21 @@ export default function Recipe({ onNavigate }: RecipeProps) {
           <section>
             <div className="flex items-center justify-between mb-3 border-b border-border-color pb-1">
               <h3 className="font-mono text-xs text-text-mute uppercase tracking-widest">输入 // 材料</h3>
-              <span className="font-mono text-xs text-primary">{ingredients.length} 项</span>
+              <span className="font-mono text-xs text-primary">{isLoading ? '加载中...' : `${ingredients.length} 项`}</span>
             </div>
             <div className="grid grid-cols-1 border-t border-border-color">
+              {ingredients.length === 0 && !isLoading && (
+                <div className="py-4 text-center text-text-mute text-sm font-mono">暂无材料，请添加。</div>
+              )}
               {ingredients.map((ing) => (
                 <div key={ing.id} className={`grid grid-cols-12 gap-4 py-3 border-b border-dashed border-border-color items-center ${ing.missing ? 'opacity-50' : ''}`}>
                   <div className="col-span-1 text-text-mute flex justify-center">
                     {ing.missing ? (
                       <span className="material-symbols-outlined text-[16px] text-alert">error</span>
                     ) : (
-                      <input 
-                        className="w-4 h-4 rounded-sm border-text-mute bg-transparent checked:bg-primary checked:border-primary focus:ring-0 focus:ring-offset-0 text-primary transition-colors cursor-pointer" 
-                        type="checkbox" 
+                      <input
+                        className="w-4 h-4 rounded-sm border-text-mute bg-transparent checked:bg-primary checked:border-primary focus:ring-0 focus:ring-offset-0 text-primary transition-colors cursor-pointer"
+                        type="checkbox"
                         checked={ing.checked}
                         onChange={() => toggleIngredient(ing.id)}
                       />
@@ -136,7 +176,7 @@ export default function Recipe({ onNavigate }: RecipeProps) {
                 </div>
               ))}
             </div>
-            
+
             <div className="mt-4 p-3 border border-border-color bg-surface/30 rounded-sm">
               <h4 className="font-mono text-[10px] text-text-mute uppercase tracking-widest mb-2">添加新材料</h4>
               <form onSubmit={handleAddIngredient} className="flex flex-col gap-2">
@@ -184,7 +224,7 @@ export default function Recipe({ onNavigate }: RecipeProps) {
             </div>
             <div className="relative space-y-0 pl-2">
               <div className="absolute left-[19px] top-2 bottom-4 w-px bg-border-color"></div>
-              
+
               <div className="relative pl-10 pb-8 group">
                 <div className="absolute left-0 top-0 w-10 flex justify-center bg-background-dark z-10 py-1">
                   <span className="font-mono text-primary font-bold text-lg">01</span>
